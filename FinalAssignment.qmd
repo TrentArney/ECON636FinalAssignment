@@ -1,0 +1,148 @@
+---
+title: "Final Assignment"
+format: html
+editor: visual
+---
+
+## ECON 636 Final Assignment
+
+Trent Arney
+
+```{r}
+#| echo: false
+#| message: FALSE
+options(repos = c(CRAN = "https://cran.r-project.org"))
+install.packages(c('nycflights13', 'tidyverse', 'dplyr', 'knitr', 'ggplot2'), quiet = TRUE)
+library('tidyverse')
+library('nycflights13')
+library('dplyr')
+library('knitr')
+library('ggplot2')
+data(flights)
+data(airlines)
+merged_data <- merge(flights, airlines, by.x = "carrier", by.y = "carrier")
+```
+
+In the 'NYCFlights13' dataset, flights out of NYC are recorded over the year of 2013. 16 different airlines are recorded to have flown out of NYC in the dataset. United Air Lines Inc. had the most flights (58,665) while SkyWest Airlines Inc. had the least (32).
+
+```{r}
+#| echo: false
+#| message: FALSE
+flight_counts <- merged_data |>
+  group_by(name) |>
+  summarize(Count = n()) |>
+  arrange(desc(Count))
+flight_counts
+```
+
+One thing everybody laments when flying is delays. Flight delays can drive headache, anxiety, and may even cause you to miss a connecting flight. Uprising to me, and I would imagine to most, is that flight delays are not very consistent and don't tend to follow a trend.
+
+```{r}
+#| echo: false
+#| message: FALSE
+daily_avg_delay <- merged_data |>
+  group_by(year, month, day) |>
+  summarize(AvgDelay = mean(arr_delay, na.rm = TRUE))
+
+ggplot(daily_avg_delay, aes(x = as.Date(paste(year, month, day, sep = "-")), y = AvgDelay)) +
+  geom_line() + labs(x = "Date",y = "Average Delay (minutes)",title = "Average Daily Delays Across All Airlines in 2013") + 
+  scale_x_date(date_breaks = "1 month", date_labels = "%b") + theme_minimal()
+```
+
+When we break this down by airline and just look at a few, we can see that there are delays across airlines that happen at the same time, but there is still quite a bit of variability between different airlines.
+
+```{r}
+#| echo: false
+#| message: FALSE
+selected_airlines <- c("American Airlines Inc.", "US Airways Inc.", "United Air Lines Inc.","JetBlue Airways")
+flights_selected <- merged_data |>
+  filter(name %in% selected_airlines) |>
+  filter(month %in% c(10,11,12))
+
+daily_avg_delay <- flights_selected |>
+  group_by(year, month, day, name) |>
+  summarize(AvgDelay = mean(dep_delay, na.rm = TRUE))
+
+ggplot(daily_avg_delay, aes(x = as.Date(paste(year, month, day, sep = "-")), y = AvgDelay)) +
+  geom_line(aes(color = name)) +
+  labs(
+    x = "Date",
+    y = "Average Delay (minutes)",
+    title = "Average Daily Delays for Selected Airlines in Q4 2013",
+    color = "Airline"
+  ) +
+  scale_x_date(date_breaks = "1 month", date_labels = "%b") +
+  theme_minimal()
+```
+
+On December 9th, 2013, American Airlines and US Airways merged, forming one of the largest airlines in the world, now known as the American Airlines Group. I am curious if the result of this merger resulted in a change in delays for these two merged Airlines. On one hand, there could be an increase in delays immediately following the merger, due to more time and effort being devoted to the merger rather than logistics. On the other hand, American Airlines' and US Airways' industry knowledge could combine to result in more efficient logistics, and in turn, lower delays.
+
+To test this hypothesis, we will conduct a Regression Discontinuity Design (RDD) to determine if there was any causal impact of this merger on delayed flights.
+
+Taking an initial look at American Airlines Group's Delays, at the date of the merger (12/9/13), it looks like there is a jump in the average delay, but it isn't entirely clear if this is sustained. The RDD should clarify this for us.
+
+```{r}
+#| echo: false
+#| message: FALSE
+merged_data <- merged_data |>
+  mutate(name = ifelse(name %in% c("American Airlines Inc.", "US Airways Inc."), "American Airlines Group", name)) |>
+  filter(name == 'American Airlines Group')
+
+daily_avg_delay <- merged_data |>
+  group_by(year, month, day, name) |>
+  summarize(AvgDelay = mean(dep_delay, na.rm = TRUE))
+
+ggplot(daily_avg_delay, aes(x = as.Date(paste(year, month, day, sep = "-")), y = AvgDelay))  + geom_line() +
+  labs(
+    x = "Date",
+    y = "Average Delay (minutes)",
+    title = "Average Daily Delays for American Airlines Group in Q4 2013",
+  ) +
+  scale_x_date(date_breaks = "1 month", date_labels = "%b") +
+  theme_minimal()+ 
+  geom_vline(xintercept = as.Date("2013-12-09"), linetype = "dashed", color = "red") +
+  annotate("text", x = as.Date("2013-12-10"), y = 50, label = "Date of Merger", color = "red")
+```
+
+According to the results of the RDD (as shown below), there appears to be a significant jump in the average delay immediately following the merger date. We want to see a P-value (noted as Pr(\>\|t\|)) of less than 0.05 on the 'merger' variable to indicate any significant shifts, and the P-value on the merger value is .0286, indicating there was a significant change on 12/9/13. We can tell that there is a negative trend in average delay following the merger date, but we don't have enough data to tell if it returns to normal.
+
+```{r}
+#| echo: false
+#| message: FALSE
+RDD_data <- daily_avg_delay |>
+  filter(as.Date(paste(year, month, day, sep = "-")) >= as.Date("2013-11-01") &
+           as.Date(paste(year, month, day, sep = "-")) <= as.Date("2013-12-31"))
+
+RDD_data <- RDD_data |>
+  mutate(merger = as.Date(paste(year, month, day, sep = "-")) >= as.Date("2013-12-09"))
+
+RDD_data$merger <- as.integer(RDD_data$merger)
+
+linear_model <- lm(AvgDelay ~ day + merger + day*merger, data = RDD_data)
+
+summary(linear_model)
+```
+
+We can visualize this (statistically insignificant) change in the trend in the plot below:
+
+```{r}
+#| echo: false
+#| message: FALSE
+RDD_data <- daily_avg_delay |>
+  filter(as.Date(paste(year, month, day, sep = "-")) >= as.Date("2013-12-01") &
+           as.Date(paste(year, month, day, sep = "-")) <= as.Date("2013-12-31"))
+
+ggplot(RDD_data, aes(x = day, y = AvgDelay)) +
+  geom_point() +
+  geom_segment(aes(x = 1, xend = 9, y = 3.7354 + -.0237 * 1, yend = 3.7354 + -.0237 * 9), color = "blue") +
+  geom_segment(aes(x = 9, xend = 31, y = 16.619 + -0.349 * 9, yend = 16.619 + -0.349 * 31), color = "red") +
+  labs(
+    x = "Day in December",
+    y = "Average Delay (minutes)",
+    title = "Regression Discontinuity Analysis for American Airlines Group"
+  ) +
+  scale_x_continuous(breaks = seq(1, 31, by = 7)) +
+  theme_minimal()
+```
+
+In conclusion, it appears that the Merger between American Airlines and US Airways (forming American Airlines Group) resulted in an immediately higher average delay. The delays appear to be trending back to normal some time after the merger, but we don't have enough data following the merger to be certain.
