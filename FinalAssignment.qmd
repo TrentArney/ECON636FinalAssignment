@@ -1,3 +1,7 @@
+output:
+  quarto::quarto_html:
+    output_path: "docs/index.html"
+
 ---
 title: "Final Assignment"
 format: html
