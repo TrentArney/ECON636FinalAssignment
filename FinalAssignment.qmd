@@ -1,8 +1,9 @@
 
 ---
 title: "Final Assignment"
-format: html
-editor: visual
+output:
+  html_document:
+    self_contained: true
 ---
 
 ## ECON 636 Final Assignment
